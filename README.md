@@ -29,9 +29,10 @@ Total waktu: ~30-90 menit (tergantung CPU). Mostly compile time untuk `zebrad` d
 
 | File | Fungsi |
 |---|---|
-| `install.sh` | Full installer: deps → Rust → zebrad → relay → register → start |
+| `install.sh` | Full installer: deps → swap → Rust → zebrad → relay → register → start |
 | `restart.sh` | Restart zebrad + relay setelah server reboot |
 | `status.sh` | Cek status semua komponen + count accepted/rejected |
+| `swapfix.sh` | Standalone swap creator (untuk VPS yang sudah install tanpa swap) |
 
 ## 🔧 Yang Lerouta Tambahkan vs Panduan Original
 
@@ -46,6 +47,8 @@ Panduan original sering gagal di Ubuntu fresh karena:
 | Build ulang zebrad/relay walau sudah ada | Skip kalau binary exists |
 | Tidak ada cara cek status | Ada `status.sh` |
 | Manual register tiap reboot | State file di-cache, auto skip |
+| Register timeout (Fly.io cold start) | 5x retry dengan exponential backoff |
+| **Sync stuck karena no swap (VPS 8GB tanpa swap)** | **Auto-create 4GB swap** |
 
 ## 🔄 After Server Reboot
 
@@ -54,6 +57,23 @@ bash restart.sh
 ```
 
 Lebih bersih daripada paste banyak `nohup ... &` lagi.
+
+## 🚑 Sudah Terlanjur Install Tanpa Swap?
+
+Kalau zebrad stuck/stall (block tidak bertambah, banyak `ValidationRequestError: Elapsed`), kemungkinan besar VPS Yang Mulia tidak punya swap. Fix tanpa restart zebrad:
+
+```bash
+cd ~/depinzcash-installer
+git pull
+bash swapfix.sh
+```
+
+Tunggu 10-15 menit, lalu cek progress:
+```bash
+grep "current_height" ~/zebrad.log | tail -5
+```
+
+Block harusnya bertambah konsisten (>500 block per menit di era awal).
 
 ## 📊 Monitoring
 

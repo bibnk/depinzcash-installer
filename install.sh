@@ -94,6 +94,46 @@ asroot apt-get install -y -qq \
   ca-certificates
 ok "System deps installed"
 
+# ===== Step 1.5: Auto-create swap (CRITICAL untuk VPS <16GB RAM) =====
+log "Step 1.5/7 — Check & setup swap"
+TOTAL_RAM_MB=$(free -m | awk '/^Mem:/{print $2}')
+SWAP_MB=$(free -m | awk '/^Swap:/{print $2}')
+
+if [[ "$SWAP_MB" -gt 0 ]]; then
+  ok "Swap sudah aktif: ${SWAP_MB} MB"
+elif [[ "$TOTAL_RAM_MB" -ge 16384 ]]; then
+  ok "RAM ${TOTAL_RAM_MB} MB cukup besar, skip swap"
+else
+  # Calculate swap size: 4GB minimum, atau 50% RAM kalau RAM <8GB
+  if [[ "$TOTAL_RAM_MB" -lt 8192 ]]; then
+    SWAP_SIZE="4G"
+  else
+    SWAP_SIZE="4G"
+  fi
+  warn "RAM cuma ${TOTAL_RAM_MB} MB tanpa swap → zebrad bakal stall saat verify block."
+  warn "Membuat ${SWAP_SIZE} swap file di /swapfile..."
+
+  if [[ ! -f /swapfile ]]; then
+    asroot fallocate -l "$SWAP_SIZE" /swapfile || asroot dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress
+    asroot chmod 600 /swapfile
+    asroot mkswap /swapfile
+  fi
+  asroot swapon /swapfile 2>/dev/null || warn "swapon failed (mungkin sudah ON)"
+
+  # Persist di fstab kalau belum ada
+  if ! grep -q '^/swapfile' /etc/fstab; then
+    echo '/swapfile none swap sw 0 0' | asroot tee -a /etc/fstab >/dev/null
+  fi
+
+  # Tune swappiness (jangan terlalu agresif pakai swap)
+  if ! grep -q '^vm.swappiness' /etc/sysctl.conf; then
+    echo 'vm.swappiness=10' | asroot tee -a /etc/sysctl.conf >/dev/null
+    asroot sysctl -q vm.swappiness=10 2>/dev/null || true
+  fi
+
+  ok "Swap activated: $(free -h | awk '/^Swap:/{print $2}') (swappiness=10)"
+fi
+
 # ===== Step 2: Install Rust =====
 log "Step 2/7 — Install/check Rust toolchain"
 if [[ ! -f "$HOME_DIR/.cargo/env" ]]; then
