@@ -208,14 +208,45 @@ else
 fi
 
 if [[ ! -f "$RELAY_STATE" ]]; then
-  log "Register node ke API..."
-  "$RELAY_BIN" register \
-    --api "$API_URL" \
-    --keypair "$KEYPAIR" \
-    --kind zebra-full \
-    --label "$LABEL" \
-    --state "$RELAY_STATE"
-  ok "Node registered"
+  log "Register node ke API (auto-retry karena API DePINZcash kadang slow/cold-start)..."
+  REGISTER_OK=0
+  for attempt in 1 2 3 4 5; do
+    log "  Attempt $attempt/5..."
+    if "$RELAY_BIN" register \
+        --api "$API_URL" \
+        --keypair "$KEYPAIR" \
+        --kind zebra-full \
+        --label "$LABEL" \
+        --state "$RELAY_STATE" 2>&1 | tee /tmp/depin-register.out; then
+      if [[ -f "$RELAY_STATE" ]]; then
+        REGISTER_OK=1
+        break
+      fi
+    fi
+    # Detect transient timeout errors
+    if grep -qE "operation timed out|connect.*timed out|503|502|504" /tmp/depin-register.out 2>/dev/null; then
+      backoff=$((attempt * 10))
+      warn "Transient error, retry dalam ${backoff}s..."
+      sleep "$backoff"
+    else
+      err "Non-transient error, hentikan retry. Lihat output di atas."
+      break
+    fi
+  done
+  if [[ "$REGISTER_OK" -eq 1 ]]; then
+    ok "Node registered"
+  else
+    err "Gagal register setelah 5 attempt. Coba manual nanti dengan:"
+    echo "    $RELAY_BIN register \\"
+    echo "      --api $API_URL \\"
+    echo "      --keypair $KEYPAIR \\"
+    echo "      --kind zebra-full \\"
+    echo "      --label \"$LABEL\" \\"
+    echo "      --state $RELAY_STATE"
+    echo ""
+    warn "Skip Step 7 watcher karena belum ter-register."
+    exit 1
+  fi
 fi
 
 # Start watcher
